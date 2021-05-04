@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+import sys
 import socket
 import threading
 import pickle
@@ -115,8 +116,7 @@ class ChatClient(IChatClient):
 
 
 
-if __name__ == "__main__":
-    import sys
+def run_client():
     user_id = int(sys.argv[1])
     name = str(sys.argv[2])
     password = str(sys.argv[3])
