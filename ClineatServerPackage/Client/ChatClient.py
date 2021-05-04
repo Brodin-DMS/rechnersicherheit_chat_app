@@ -2,8 +2,8 @@ from abc import ABCMeta, abstractmethod
 import socket
 import threading
 import pickle
-from ClineatServerPackage.MessagePackage.Message import MessageType, PrivateTextMessage, GroupTextMessage, LoginMessage, \
-    LoginResponse
+from MessagePackage.Message import MessageType, PrivateTextMessage, \
+    GroupTextMessage, LoginMessage, LoginResponse
 
 
 class IChatClient(metaclass=ABCMeta):

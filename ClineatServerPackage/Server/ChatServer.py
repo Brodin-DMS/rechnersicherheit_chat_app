@@ -1,8 +1,8 @@
 import pickle
 import threading
 import socket
-from ClineatServerPackage.MessagePackage.Message import PrivateTextMessage, MessageType, GroupTextMessage, BaseMessage, \
-    LoginMessage, LoginResponse
+from MessagePackage.Message import PrivateTextMessage, MessageType, \
+    GroupTextMessage, BaseMessage, LoginMessage, LoginResponse
 
 
 class User:
@@ -102,11 +102,11 @@ class ChatServer:
                 pass
         self.receive_socket.close()
 
-if __name__ == "__main__":
-    pass
+def run_server():
     chat_server = ChatServer()
     print("stared Server on Ip: %s on port: %i\n", (chat_server.host_ip, chat_server.auth_port))
     chat_server.start_receiver_thread()
     user_input = input("Control Server Application type\n"
                        "exit to close ServerApplication for type anything to exit anyways")
     chat_server.receive_socket.close()
+
