@@ -47,6 +47,45 @@ class ChatServer:
         receiver_thread = threading.Thread(target=self.receive_message)
         receiver_thread.start()
 
+    def start_connection_thread(self, connection, address):
+        threading.Thread(target=self.connection_receive_message, args=(connection, address)).start()
+
+
+    def connection_receive_message(self,connection, address):
+        while self.is_receiving:
+            print("Server is listening")
+            print(connection, address, " socket accepted")
+            print("receiving any message")
+            data = connection.recv(1024)
+            print("received data", data)
+            message_object = pickle.loads(data)
+            print(type(message_object))
+            if isinstance(message_object, LoginMessage):
+                #TODO check for creds, store user:passowrds persistent
+
+                self.users[message_object.senderId] = User(message_object.username, address[0], message_object.senderId, connection, address)
+                response_message = LoginResponse.Create(1)
+                response_message_object = pickle.dumps(response_message)
+                connection.sendall(response_message_object)
+            elif isinstance(message_object, PrivateTextMessage):
+                print("receive Private Message")
+                #TODO log
+                print(self.users)
+                print(message_object.receiverId)
+                match = self.users[message_object.receiverId]
+                print(match)
+                sending_message_object = pickle.dumps(message_object)
+                match.connection.sendall(sending_message_object )
+            elif isinstance(message_object, GroupTextMessage):
+                user_list = self.groupChats[message_object.receiverId]
+                for u in user_list:
+                    u.connection.sendall(message_object)
+            else:
+                #TODO Throw No valid mesageType Execption
+                pass
+
+
+
     def forward_message(self, message, message_type):
 
         if message_type == MessageType.PrivateTextMessage:
@@ -71,6 +110,7 @@ class ChatServer:
             pass
 
     def receive_message(self):
+        #nimmt connections an
         self.receive_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.receive_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         print("Server created Socket")
@@ -78,38 +118,10 @@ class ChatServer:
         print("Server bound socket")
         self.is_receiving = True
         self.receive_socket.listen()
-        connection, address = self.receive_socket.accept()
-        while self.is_receiving:
-            print("Server is listening")
-            print(connection, address, " socket accepted")
-            print("receiving any message")
-            data = connection.recv(1024)
-            print("received data", data)
-            message_object = pickle.loads(data)
-            print(type(message_object))
-            if isinstance(message_object, LoginMessage):
-                #TODO check for creds, store user:passowrds persistent
-
-                self.users[message_object.senderId]=User(message_object.username, address[0], message_object.senderId, connection, address)
-                response_message = LoginResponse.Create(1)
-                response_message_object = pickle.dumps(response_message)
-                connection.sendall(response_message_object)
-            elif isinstance(message_object, PrivateTextMessage):
-                print("receive Private Message")
-                #TODO log
-                print(self.users)
-                print(message_object.receiverId)
-                match = self.users[message_object.receiverId]
-                print(match)
-                sending_message_object = pickle.dumps(message_object)
-                match.connection.sendall(sending_message_object )
-            elif isinstance(message_object, GroupTextMessage):
-                user_list = self.groupChats[message_object.receiverId]
-                for u in user_list:
-                    u.connection.sendall(message_object)
-            else:
-                #TODO Throw No valid mesageType Execption
-                pass
+        while True:
+            connection, address = self.receive_socket.accept()
+            self.start_connection_thread(connection, address)
+            #start thread for connection
         self.receive_socket.close()
 
 def run_server():
