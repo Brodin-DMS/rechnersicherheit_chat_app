@@ -4,15 +4,18 @@ class BaseMessage(metaclass=ABCMeta):
     def __init__(self, content, senderId):
         self.content = content
         self.senderId = senderId
-        self.messageType =None
+        self.messageType = None
 
-class PrivateTextMessage(BaseMessage):
+#class PrivateTextMessage(BaseMessage):
+class PrivateTextMessage():
     @staticmethod
     def Create(content, senderId, receiverId):
         return PrivateTextMessage(content, senderId, receiverId)
 
     def __init__(self, content, senderId, receiverId):
-        super.__init__(content, senderId)
+        #super().__init__(content, senderId)
+        self.content = content
+        self.senderId = senderId
         self.receiverId = receiverId
         self.messageType = MessageType.PrivateTextMessage
 
@@ -22,7 +25,7 @@ class GroupTextMessage(BaseMessage):
         return GroupTextMessage(content, senderId, groupId)
 
     def __init__(self, content, senderId, groudId):
-        super.__init__(content, senderId)
+        super().__init__(content, senderId)
         self.groupId = groudId
         self.messageType = MessageType.GroupTextMessage
 

@@ -6,11 +6,12 @@ from MessagePackage.Message import PrivateTextMessage, MessageType, \
 
 
 class User:
-    def __init__(self, username, ip, port, user_id):
+    def __init__(self, username, ip, user_id, connection, adress):
         self.username = username
         self.ip = ip
-        self.port = port
         self.user_id = user_id
+        self.connection = connection
+        self.adress = adress
 
 
 class GroupChat:
@@ -23,14 +24,12 @@ class GroupChat:
 class ChatServer:
     def __init__(self):
         self.auth_port = 55443
-        self.message_port = 55444
         self.client_ip = "127.0.0.1"
         self.host_ip = "127.0.0.1"
-        self.client_port = 37375
         self.user_id_counter = 0
-        self.users = []
+        self.users = dict()
         self.group_id_counter = 0
-        self.groupChats = []
+        self.groupChats = dict()
         self.group_chat_message_history = []
         self.private_chat_message_history = []
         self.is_receiving = False
@@ -40,14 +39,15 @@ class ChatServer:
         print("%s: %s", (message.senderId, message.content))
 
     def start_message_thread(self, content, message_typ, receiver_id):
-        message_thread = threading.Thread(target=self.send_message, args=(self, content, message_typ, receiver_id))
+        message_thread = threading.Thread(target=self.forward_message, args=(self, content, message_typ, receiver_id))
         message_thread.start()
+
 
     def start_receiver_thread(self):
         receiver_thread = threading.Thread(target=self.receive_message)
         receiver_thread.start()
 
-    def send_message(self, message, message_type):
+    def forward_message(self, message, message_type):
 
         if message_type == MessageType.PrivateTextMessage:
             match = next((user for user in self.users if user.user_id == PrivateTextMessage(message).receiverId), None)
@@ -71,32 +71,42 @@ class ChatServer:
             pass
 
     def receive_message(self):
-        self.receive_socket = socket.socket()
+        self.receive_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.receive_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         print("Server created Socket")
         self.receive_socket.bind((self.host_ip, self.auth_port))
         print("Server bound socket")
         self.is_receiving = True
+        self.receive_socket.listen()
+        connection, address = self.receive_socket.accept()
         while self.is_receiving:
-            self.receive_socket.listen()
             print("Server is listening")
-            connection, address = self.receive_socket.accept()
             print(connection, address, " socket accepted")
+            print("receiving any message")
             data = connection.recv(1024)
             print("received data", data)
             message_object = pickle.loads(data)
+            print(type(message_object))
             if isinstance(message_object, LoginMessage):
                 #TODO check for creds, store user:passowrds persistent
-                print(address)
-                self.users.append(User(message_object.username, address[0], self.client_port, message_object.senderId))
+
+                self.users[message_object.senderId]=User(message_object.username, address[0], message_object.senderId, connection, address)
                 response_message = LoginResponse.Create(1)
                 response_message_object = pickle.dumps(response_message)
                 connection.sendall(response_message_object)
             elif isinstance(message_object, PrivateTextMessage):
+                print("receive Private Message")
                 #TODO log
-                self.start_message_thread(message_object, message_object.messageType)
+                print(self.users)
+                print(message_object.receiverId)
+                match = self.users[message_object.receiverId]
+                print(match)
+                sending_message_object = pickle.dumps(message_object)
+                match.connection.sendall(sending_message_object )
             elif isinstance(message_object, GroupTextMessage):
-                #TODO log
-                self.start_message_thread(message_object, message_object.messageType)
+                user_list = self.groupChats[message_object.receiverId]
+                for u in user_list:
+                    u.connection.sendall(message_object)
             else:
                 #TODO Throw No valid mesageType Execption
                 pass
