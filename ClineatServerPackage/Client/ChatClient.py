@@ -38,12 +38,12 @@ class ChatClient:
         self.socket.sendall(data)
         sign_up_response = self.socket.recv(1024)
         sign_up_response = pickle.loads(sign_up_response)
-        if(sign_up_response.responseCode == 1):
+        if (sign_up_response.responseCode == 1):
             print("sign_up success\n")
             self.is_receiving = True
             self.is_auth = True
             threading.Thread(target=self.receive_messages()).start()
-        elif(sign_up_response.responseCode == 2):
+        elif (sign_up_response.responseCode == 2):
             print("username already in use")
             self.socket.close()
         else:
@@ -68,10 +68,6 @@ class ChatClient:
         else:
             print("Login Failed")
             self.socket.close()
-
-    @staticmethod
-    def print_to_screen(message):
-            print("%s: %s" % (message.sender_name, message.content))
 
     def receive_messages(self):
         self.socket.settimeout(5.0)
@@ -103,10 +99,6 @@ class ChatClient:
         data = pickle.dumps(message_object)
         self.socket.sendall(data)
 
-    def exit_application(self):
-        print("Quitting, Please wait...")
-        self.is_receiving = False
-
     def user_input(self):
         print("use --help to list options")
         while self.is_receiving:
@@ -121,39 +113,46 @@ class ChatClient:
                     password = getpass("Enter Password:")
                     self.sign_up(username, password)
                 else:
-                        print("Command not found")
+                    print("Command not found")
             else:
                 message_content = input()
                 if message_content.strip() == "--help":
                     print("--quit ,Exit application\n"
-                                  "--list ,display all known chats\n"
-                                  "--swap_to_group groupname ,start chatting with group\n"
-                                  "--swap_to_person username ,start chatting with person\n"
-                                  "--create groupname ,create a groupname")
+                          "--list ,display all known chats\n"
+                          "--swap_to_group groupname ,start chatting with group\n"
+                          "--swap_to_person username ,start chatting with person\n"
+                          "--create groupname ,create a groupname")
                 elif message_content.strip() == "--quit":
                     self.exit_application()
                     return True
                 elif message_content.strip() == "--list":
-                    #TODO display list of possible chats --therefore we have to keep a list of known users and groups in a file
+                    # TODO display list of possible chats --therefore we have to keep a list of known users and groups in a file
                     pass
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--swap_to_person":
                     self.current_message_type = MessageType.PrivateTextMessage
-                    self.current_message_receiver_name = message_content.split(" ",1)[1]
+                    self.current_message_receiver_name = message_content.split(" ", 1)[1]
                     print("Privatechat with " + self.current_message_receiver_name + ".")
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--swap_to_group":
                     self.current_message_type = MessageType.GroupTextMessage
-                    self.current_message_receiver_name = message_content.split(" ",1)[1]
-                    print("Groupchat with "+self.current_message_receiver_name+".")
+                    self.current_message_receiver_name = message_content.split(" ", 1)[1]
+                    print("Groupchat with " + self.current_message_receiver_name + ".")
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--create":
                     self.start_message_thread("--create", self.username, message_content.split(" ", 1)[1])
                 else:
                     if self.current_message_receiver_name is None or self.current_message_type is None:
                         print("Please select a person or group to chat with first.\n")
                     else:
-                        self.start_message_thread(message_content,self.username, self.current_message_receiver_name)
+                        self.start_message_thread(message_content, self.username, self.current_message_receiver_name)
+
+    @staticmethod
+    def print_to_screen(message):
+        print("%s: %s" % (message.sender_name, message.content))
+
+    def exit_application(self):
+        print("Quitting, Please wait...")
+        self.is_receiving = False
 
 
 def run_client():
     client = ChatClient()
     client.start_user_input()
-
