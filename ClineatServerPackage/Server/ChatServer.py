@@ -51,7 +51,6 @@ class Storage:
     def store(self, user: StoredUser):
         self.user_hashes[user.username] = user
         with open(self.path, "a") as key_file:
-            print(user.salt.hex(), user.hashed_password)
             key_file.write(f"{user.username},{user.salt.hex()},{user.hashed_password.hex()}\n")
 
     def load(self):
@@ -60,7 +59,6 @@ class Storage:
                 lines = key_file.readlines()
                 for line in lines:
                     username, salt, hashed_password = line.split(",")
-                    print(bytes.fromhex(salt),bytes.fromhex(hashed_password))
                     new_user = StoredUser(username,
                                           bytes.fromhex(salt),
                                           bytes.fromhex(hashed_password))
@@ -132,7 +130,6 @@ class ChatServer:
         if isinstance(message, LoginMessage):
             stored_password: int = self.storage.user_hashes[message.username].hashed_password
             salt = self.storage.user_hashes[message.username].salt
-            print(StoredUser.salted_hash(salt, message.password), stored_password)
             if StoredUser.salted_hash(salt, message.password) == stored_password:
                 self.active_users[message.username] = User(message.username, connection)
                 response_message = MessageResponse.create(1)
