@@ -57,7 +57,7 @@ class SignUpMessage:
     def create(username, password):
         return SignUpMessage(username, password)
 
-    def __int__(self, username, password):
+    def __init__(self, username, password):
         self.username = username
         self.password = password
         self.messageType = MessageType.SignUpMessage
