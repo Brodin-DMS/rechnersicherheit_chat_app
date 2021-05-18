@@ -42,7 +42,7 @@ class ChatClient:
             print("sign_up success\n")
             self.is_receiving = True
             self.is_auth = True
-            threading.Thread(target=self.receive_messages()).start()
+            threading.Thread(target=self.receive_messages).start()
         elif (sign_up_response.responseCode == 2):
             print("username already in use")
             self.socket.close()

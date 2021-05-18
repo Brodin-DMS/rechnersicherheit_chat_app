@@ -1,8 +1,12 @@
+import hashlib
+import json
+import os
 import pickle
 import threading
 import socket
 from MessagePackage.Message import PrivateTextMessage, MessageType, \
-    GroupTextMessage, BaseMessage, LoginMessage, MessageResponse, CreateGroupMessage
+    GroupTextMessage, BaseMessage, LoginMessage, MessageResponse, \
+    CreateGroupMessage, SignUpMessage
 
 
 class User:
@@ -17,6 +21,61 @@ class GroupChat:
         self.users = []
 
 
+class StoredUser:
+    def __init__(self, username: str, salt: bytes, password: bytes):
+        self.username: str = username
+        self.salt: bytes = salt
+        self.hashed_password: bytes = password
+
+    @staticmethod
+    def create(username: str, password: str):
+        salt: bytes = os.urandom(32)
+        return StoredUser(username, salt, StoredUser.salted_hash(salt, password))
+
+    @staticmethod
+    def salted_hash(salt, password):
+        return hashlib.pbkdf2_hmac(
+            'sha256',  # The hash digest algorithm for HMAC
+            password.encode('utf-8'),  # Convert the password to bytes
+            salt,  # Provide the salt
+            100000  # It is recommended to use at least 100,000 iterations of SHA-256
+        )
+
+
+class Storage:
+    def __init__(self, path: str):
+        self.path: str = path
+        self.user_hashes = dict()
+        self.load()
+
+    def store(self, user: StoredUser):
+        self.user_hashes[user.username] = user
+        with open(self.path, "a") as key_file:
+            print(user.salt.hex(), user.hashed_password)
+            key_file.write(f"{user.username},{user.salt.hex()},{user.hashed_password.hex()}\n")
+
+    def load(self):
+        try:
+            with open(self.path, "r") as key_file:
+                lines = key_file.readlines()
+                for line in lines:
+                    username, salt, hashed_password = line.split(",")
+                    print(bytes.fromhex(salt),bytes.fromhex(hashed_password))
+                    new_user = StoredUser(username,
+                                          bytes.fromhex(salt),
+                                          bytes.fromhex(hashed_password))
+                    self.user_hashes[username] = new_user
+        except FileNotFoundError:
+            pass
+
+    def check_user(self, username: str) -> bool:
+        return username in self.user_hashes
+
+    def print_user_hashes(self):
+        for stored_user in self.user_hashes.values():
+            print(f"{stored_user.username}")
+
+
 class ChatServer:
     def __init__(self):
         self.port = 55443
@@ -27,6 +86,7 @@ class ChatServer:
         self.private_chat_message_history = []
         self.is_receiving = True
         self.receive_socket = None
+        self.storage: Storage = Storage("storage.csv")
 
     @staticmethod
     def print_to_screen(message):
@@ -49,7 +109,7 @@ class ChatServer:
                 self.forward_message(message_object, connection)
             except EOFError:
                 match = [k for k in self.active_users if self.active_users[k].connection == connection]
-                if match is not None:
+                if match:
                     self.active_users.pop(match[0])
                 connection_is_alive = False
             except socket.timeout:
@@ -58,12 +118,30 @@ class ChatServer:
 
     def forward_message(self, message, connection):
 
+        if isinstance(message, SignUpMessage):
+            if self.storage.check_user(message.username):
+                response_message = MessageResponse.create(2)
+                response_message_object = pickle.dumps(response_message)
+                connection.sendall(response_message_object)
+            else:
+                self.active_users[message.username] = User(message.username, connection)
+                self.storage.store(StoredUser.create(message.username, message.password))
+                response_message = MessageResponse.create(1)
+                response_message_object = pickle.dumps(response_message)
+                connection.sendall(response_message_object)
         if isinstance(message, LoginMessage):
-            #TODO check if authenticated, instead authenticate on login, but im testinf this for now
-            self.active_users[message.username] = User(message.username, connection)
-            response_message = MessageResponse.create(1)
-            response_message_object = pickle.dumps(response_message)
-            connection.sendall(response_message_object)
+            stored_password: int = self.storage.user_hashes[message.username].hashed_password
+            salt = self.storage.user_hashes[message.username].salt
+            print(StoredUser.salted_hash(salt, message.password), stored_password)
+            if StoredUser.salted_hash(salt, message.password) == stored_password:
+                self.active_users[message.username] = User(message.username, connection)
+                response_message = MessageResponse.create(1)
+                response_message_object = pickle.dumps(response_message)
+                connection.sendall(response_message_object)
+            else:
+                response_message = MessageResponse.create(3)
+                response_message_object = pickle.dumps(response_message)
+                connection.sendall(response_message_object)
         elif isinstance(message, PrivateTextMessage):
             # TODO log
             try:
@@ -99,6 +177,8 @@ class ChatServer:
 
     def receive_message(self):
         self.receive_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #FIXME Remove the next line for security reasons
+        self.receive_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.receive_socket.bind((self.host_ip, self.port))
         self.is_receiving = True
         self.receive_socket.listen()
@@ -125,6 +205,8 @@ def run_server():
             break
         if user_input == "show users":
             print(chat_server.active_users)
+        if user_input == "show storage":
+            chat_server.storage.print_user_hashes()
         if user_input == "show groups":
             print(chat_server.groupChats)
     for thread in threading.enumerate():
