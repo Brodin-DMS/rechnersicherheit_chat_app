@@ -4,9 +4,8 @@ import os
 import pickle
 import threading
 import socket
-from MessagePackage.Message import PrivateTextMessage, MessageType, \
-    GroupTextMessage, BaseMessage, LoginMessage, MessageResponse, \
-    CreateGroupMessage, SignUpMessage
+# FIXME this is bad and should later be replaced with an import as ...
+from MessagePackage.Message import *
 
 
 class User:
@@ -114,6 +113,26 @@ class ChatServer:
                 continue
         connection.close()
 
+    def send_private_message(self, message, connection) -> None:
+        try:
+            match = self.active_users[message.receiver_name]
+            #deny spoofing of sender name
+            sender_match = [k for k in self.active_users if self.active_users[k].connection == connection]
+        except KeyError:
+            return
+        message.sender_name = sender_match[0]
+        sending_message_object = pickle.dumps(message)
+        match.connection.sendall(sending_message_object)
+
+    def send_group_message(self, message, connection) -> None:
+        try:
+            user_list = self.groupChats[message.receiver_name]
+        except KeyError:
+            return
+        for user in user_list:
+            message_bytes = pickle.dumps(message)
+            user.connection.sendall(message_bytes)
+
     def forward_message(self, message, connection):
 
         if isinstance(message, SignUpMessage):
@@ -141,23 +160,9 @@ class ChatServer:
                 connection.sendall(response_message_object)
         elif isinstance(message, PrivateTextMessage):
             # TODO log
-            try:
-                match = self.active_users[message.receiver_name]
-                #deny spoofing of sender name
-                sender_match = [k for k in self.active_users if self.active_users[k].connection == connection]
-            except KeyError:
-                return
-            message.sender_name = sender_match[0]
-            sending_message_object = pickle.dumps(message)
-            match.connection.sendall(sending_message_object)
+            self.send_private_message(message, connection)
         elif isinstance(message, GroupTextMessage):
-            try:
-                user_list = self.groupChats[message.receiver_name]
-            except KeyError:
-                return
-            for user in user_list:
-                message_bytes = pickle.dumps(message)
-                user.connection.sendall(message_bytes)
+            self.send_group_message(message, connection)
         elif isinstance(message, CreateGroupMessage):
             if message.group_name in self.groupChats.keys():
                 if self.active_users[message.username] in self.groupChats[message.group_name]:
@@ -166,11 +171,20 @@ class ChatServer:
                 self.groupChats[message.group_name].append(User(message.username, connection))
             else:
                 self.groupChats[message.group_name] = [User(message.username, connection)]
-
-
-        else:
-            # TODO Throw No valid mesageType Execption
-            pass
+        elif isinstance(message, AttachmentMessage):
+            # save file locally
+            # TODO prevent overwriting already existing files
+            try:
+                with open(message.filename, "wb") as attachment:
+                    attachment.write(message.content)
+            except IOError as e:
+                print(f"Could not write file to server: {e}")
+            if message.receiver_msg_type == MessageType.PrivateTextMessage:
+                self.send_private_message(message, connection)
+            elif message.receiver_msg_type == MessageType.GroupTextMessage:
+                self.send_group_message(message, connection)
+            else:
+                raise AssertionError("Invalid receiver message type!")
 
     def receive_message(self):
         self.receive_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

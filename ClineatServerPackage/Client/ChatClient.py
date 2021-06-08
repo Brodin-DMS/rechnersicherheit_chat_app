@@ -1,11 +1,12 @@
 from abc import ABCMeta, abstractmethod
 import sys
+import os
 import socket
 import threading
 import pickle
 from getpass import getpass
-from MessagePackage.Message import MessageType, PrivateTextMessage, \
-    GroupTextMessage, LoginMessage, MessageResponse, SignUpMessage, CreateGroupMessage
+# FIXME this is bad and should later be replaced with an import as ...
+from MessagePackage.Message import *
 
 
 class ChatClient:
@@ -75,7 +76,15 @@ class ChatClient:
             try:
                 received_data = self.socket.recv(1024)
                 received_message = pickle.loads(received_data)
-                self.print_to_screen(received_message)
+                if isinstance(received_message, AttachmentMessage):
+                    print("Attachment detected!")
+                    try:
+                        with open(received_message.filename + ".recvd", "wb") as attachment:
+                            attachment.write(received_message.content)
+                    except IOError as e:
+                        print(f"Could not write received attachment: {e}")
+                else:
+                    self.print_to_screen(received_message)
             except socket.timeout:
                 continue
             except EOFError:
@@ -88,6 +97,19 @@ class ChatClient:
         message_object = None
         if content == "--create":
             message_object = CreateGroupMessage(self.username, receiver_name)
+        elif content == "--attach":
+            filepath = input("Type in the path of the file to attach:")
+            try:
+                with open(filepath, "rb") as attachment:
+                    content = attachment.read()
+            except IOError:
+                # TODO this should return to being able to try again
+                print("The file could not be found")
+            filename = os.path.basename(filepath)
+            # TODO this should be catched in a non-crashing way...
+            assert self.current_message_type in [MessageType.PrivateTextMessage, MessageType.GroupTextMessage], \
+                "The receiver message type for the attachment could not be found"
+            message_object = AttachmentMessage.create(filename, content, username, receiver_name, self.current_message_type)
         elif self.current_message_type == MessageType.PrivateTextMessage:
             message_object = PrivateTextMessage.create(content, username, receiver_name)
         elif self.current_message_type == MessageType.GroupTextMessage:
@@ -117,17 +139,20 @@ class ChatClient:
             else:
                 message_content = input()
                 if message_content.strip() == "--help":
+                    # TODO deduplicate the arguments and replace them with static variables to avoid problems
                     print("--quit ,Exit application\n"
                           "--list ,display all known chats\n"
                           "--swap_to_group groupname ,start chatting with group\n"
                           "--swap_to_person username ,start chatting with person\n"
-                          "--create groupname ,create a groupname")
+                          "--create groupname ,create a groupname\n"
+                          "--attach_file , attach a file by path")
                 elif message_content.strip() == "--quit":
                     self.exit_application()
                     return True
                 elif message_content.strip() == "--list":
                     # TODO display list of possible chats --therefore we have to keep a list of known users and groups in a file
                     pass
+                # TODO all these conditions can be written way more readable e.g. using .startswith()
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--swap_to_person":
                     self.current_message_type = MessageType.PrivateTextMessage
                     self.current_message_receiver_name = message_content.split(" ", 1)[1]
@@ -139,6 +164,7 @@ class ChatClient:
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--create":
                     self.start_message_thread("--create", self.username, message_content.split(" ", 1)[1])
                 else:
+                    # TODO Does this show when attaching a file without having selected a person or group? (Since it should!)
                     if self.current_message_receiver_name is None or self.current_message_type is None:
                         print("Please select a person or group to chat with first.\n")
                     else:

@@ -73,6 +73,20 @@ class CreateGroupMessage:
         self.group_name = group_name
 
 
+class AttachmentMessage(BaseMessage):
+    @staticmethod
+    def create(filename, content, sender_name, receiver_name, receiver_msg_type):
+        return AttachmentMessage(filename, content, sender_name, receiver_name, receiver_msg_type)
+
+    def __init__(self, filename, content, sender_name, receiver_name, receiver_msg_type):
+        super().__init__(content)
+        self.sender_name = sender_name
+        self.receiver_name = receiver_name
+        self.messageType = MessageType.AttachmentMessage
+        self.filename = filename
+        self.receiver_msg_type = receiver_msg_type
+
+
 class MessageType:
     PrivateTextMessage = 0
     GroupTextMessage = 1
@@ -80,3 +94,4 @@ class MessageType:
     LoginResponse = 3
     SignUpMessage = 4
     CreateGroupMessage = 5
+    AttachmentMessage = 6
