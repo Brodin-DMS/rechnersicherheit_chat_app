@@ -77,10 +77,10 @@ class ChatClient:
                 received_data = self.socket.recv(1024)
                 received_message = pickle.loads(received_data)
                 if isinstance(received_message, AttachmentMessage):
-                    print("Attachment detected!")
                     try:
                         with open(received_message.filename + ".recvd", "wb") as attachment:
                             attachment.write(received_message.content)
+                        print(f"Attachment '{received_message.filename}' received and saved as '{received_message.filename}.recvd'")
                     except IOError as e:
                         print(f"Could not write received attachment: {e}")
                 else:
@@ -97,18 +97,26 @@ class ChatClient:
         message_object = None
         if content == "--create":
             message_object = CreateGroupMessage(self.username, receiver_name)
-        elif content == "--attach":
-            filepath = input("Type in the path of the file to attach:")
+        elif content.startswith("--attach"):
+            # get the attachment filepath either as an argument or the separate
+            # input command
+            try:
+                filepath = content.split(" ", 1)[1]
+            except IndexError:
+                filepath = input("Type in the path of the file to attach:\n")
             try:
                 with open(filepath, "rb") as attachment:
                     content = attachment.read()
             except IOError:
-                # TODO this should return to being able to try again
                 print("The file could not be found")
+                # return early if no file has been found and therefore make it
+                # possible for the user to try again
+                return
             filename = os.path.basename(filepath)
-            # TODO this should be catched in a non-crashing way...
-            assert self.current_message_type in [MessageType.PrivateTextMessage, MessageType.GroupTextMessage], \
-                "The receiver message type for the attachment could not be found"
+            if self.current_message_type not in [MessageType.PrivateTextMessage, MessageType.GroupTextMessage]:
+                print("The receiver message type for the attachment could not be found.\n"
+                      "Please make sure that a person or group to send the attachment to is selected.\n")
+                return
             message_object = AttachmentMessage.create(filename, content, username, receiver_name, self.current_message_type)
         elif self.current_message_type == MessageType.PrivateTextMessage:
             message_object = PrivateTextMessage.create(content, username, receiver_name)
