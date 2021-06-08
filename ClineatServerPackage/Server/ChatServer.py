@@ -7,6 +7,7 @@ import socket
 # FIXME this is bad and should later be replaced with an import as ...
 from MessagePackage.Message import *
 
+BUFFERSIZE = 1024
 
 class User:
     def __init__(self, username, connection):
@@ -101,7 +102,7 @@ class ChatServer:
         connection.settimeout(5.0)
         while connection_is_alive and self.is_receiving:
             try:
-                data = connection.recv(1024)
+                data = connection.recv(BUFFERSIZE)
                 message_object = pickle.loads(data)
                 self.forward_message(message_object, connection)
             except EOFError:
@@ -109,6 +110,9 @@ class ChatServer:
                 if match:
                     self.active_users.pop(match[0])
                 connection_is_alive = False
+            except pickle.UnpicklingError:
+                print(f"Invalid attachment: The chosen attachment is larger than the current buffer size of {BUFFERSIZE} bytes.")
+                continue
             except socket.timeout:
                 continue
         connection.close()
