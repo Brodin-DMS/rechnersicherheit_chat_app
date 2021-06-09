@@ -67,7 +67,7 @@ class Storage:
             with open(self.path, "r") as key_file:
                 lines = key_file.readlines()
                 for line in lines:
-                    username, salt, hashed_password = line.split(",")
+                    username, salt, hashed_password = line.rstrip().split(",")
                     new_user = StoredUser(username,
                                           bytes.fromhex(salt),
                                           bytes.fromhex(hashed_password))
