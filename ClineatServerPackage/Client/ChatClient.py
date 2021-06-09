@@ -8,6 +8,10 @@ from getpass import getpass
 # FIXME this is bad and should later be replaced with an import as ...
 from MessagePackage.Message import *
 
+BUFFERSIZE = 1024
+# maximum size of a message that can be received (mostly important for file
+# attachments) to prevent DOS by using large files
+MAX_MSG_SIZE = 1048576
 
 class ChatClient:
     def __init__(self):
@@ -74,8 +78,15 @@ class ChatClient:
         self.socket.settimeout(5.0)
         while self.is_receiving:
             try:
-                received_data = self.socket.recv(1024)
-                received_message = pickle.loads(received_data)
+                data = b''
+                while True:
+                    part = self.socket.recv(BUFFERSIZE)
+                    data += part
+                    # stop receiving when nothing is received or the upper
+                    # limit of the message size is reached
+                    if len(part) < BUFFERSIZE or len(part) > MAX_MSG_SIZE:
+                        break
+                received_message = pickle.loads(data)
                 if isinstance(received_message, AttachmentMessage):
                     try:
                         with open(received_message.filename + ".recvd", "wb") as attachment:
@@ -85,12 +96,15 @@ class ChatClient:
                         print(f"Could not write received attachment: {e}")
                 else:
                     self.print_to_screen(received_message)
-            except socket.timeout:
-                continue
             except EOFError:
                 print("Server apears to be offline")
                 self.exit_application()
                 break
+            except pickle.UnpicklingError:
+                print(f"Invalid attachment: The chosen attachment is larger than the current buffer size of {BUFFERSIZE} bytes.")
+                continue
+            except socket.timeout:
+                continue
         self.socket.close
 
     def send_message(self, content, username, receiver_name):
@@ -172,7 +186,6 @@ class ChatClient:
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--create":
                     self.start_message_thread("--create", self.username, message_content.split(" ", 1)[1])
                 else:
-                    # TODO Does this show when attaching a file without having selected a person or group? (Since it should!)
                     if self.current_message_receiver_name is None or self.current_message_type is None:
                         print("Please select a person or group to chat with first.\n")
                     else:

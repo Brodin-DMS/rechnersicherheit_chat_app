@@ -8,6 +8,9 @@ import socket
 from MessagePackage.Message import *
 
 BUFFERSIZE = 1024
+# maximum size of a message that can be received (mostly important for file
+# attachments) to prevent DOS by using large files
+MAX_MSG_SIZE = 1048576
 
 class User:
     def __init__(self, username, connection):
@@ -99,10 +102,17 @@ class ChatServer:
 
     def connection_receive_message(self, connection):
         connection_is_alive = True
-        connection.settimeout(5.0)
+        connection.settimeout(10.0)
         while connection_is_alive and self.is_receiving:
             try:
-                data = connection.recv(BUFFERSIZE)
+                data = b''
+                while True:
+                    part = connection.recv(BUFFERSIZE)
+                    data += part
+                    # stop receiving when nothing is received or the upper
+                    # limit of the message size is reached
+                    if len(part) < BUFFERSIZE or len(part) > MAX_MSG_SIZE:
+                        break
                 message_object = pickle.loads(data)
                 self.forward_message(message_object, connection)
             except EOFError:
