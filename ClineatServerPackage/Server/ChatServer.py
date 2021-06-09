@@ -168,16 +168,18 @@ class ChatServer:
         message.sender_name = sender_match[0]
         sending_message_object = pickle.dumps(message)
         match.connection.sendall(sending_message_object)
-
-        # TODO change NONE to attachment once private and group message implement attachment
-        private_history_data = (message.sender_name, message.receiver_name, message.content, None)
+        #save to history
+        if isinstance(message, PrivateTextMessage):
+            # TODO change NONE to attachment once private and group message implement attachment
+            private_history_data = (message.sender_name, message.receiver_name, message.content, None)
+        elif isinstance(message, AttachmentMessage):
+            private_history_data = (message.sender_name, message.receiver_name, None, message.content)
         con = sqlite3.connect('history.db')
         cur = con.cursor()
         cur.execute('INSERT INTO private_history(sender_name, receiver_name, message, attachment) VALUES (?,?,?,?)',
                     private_history_data)
         con.commit()
         con.close()
-
     def send_group_message(self, message, connection) -> None:
         logging.info("Forwarding group message from '%s' to '%s'",
              message.sender_name,
@@ -197,8 +199,13 @@ class ChatServer:
         for user in user_list:
             message_bytes = pickle.dumps(message)
             user.connection.sendall(message_bytes)
-        # TODO change None to attachment when group message supports attachment
-        group_history_data = (message.sender_name, message.receiver_name, message.content, None)
+
+        #save to history
+        if isinstance(message, PrivateTextMessage):
+            # TODO change NONE to attachment once private and group message implement attachment
+            group_history_data = (message.sender_name, message.receiver_name, message.content, None)
+        elif isinstance(message, AttachmentMessage):
+            group_history_data = (message.sender_name, message.receiver_name, None, message.content)
         con = sqlite3.connect('history.db')
         cur = con.cursor()
         cur.execute('INSERT INTO group_history(sender_name, group_name, message, attachment) '

@@ -126,8 +126,29 @@ class ChatClient:
                     self.block_sending = False
                 elif isinstance(received_message, PrivateHistoryMessage):
                     print(received_message.rows)
+                    for i, row in enumerate(received_message.rows):
+                        content = row[4]
+                        if content ==None:
+                            continue
+                        else:
+                            try:
+                                with open(f"receivedStoredFile{row[1]}{i}.recvd", "wb") as attachment:
+                                    attachment.write(content)
+                            except IOError as e:
+                                print(f"Could not write received attachment: {e}")
+
                 elif isinstance(received_message, GroupHistoryMessage):
                     print(received_message.rows)
+                    for i, row in enumerate(received_message.rows):
+                        content = row[4]
+                        if content ==None:
+                            continue
+                        else:
+                            try:
+                                with open(f"receivedStoredFile{row[1]}{i}.recvd", "wb") as attachment:
+                                    attachment.write(content)
+                            except IOError as e:
+                                print(f"Could not write received attachment: {e}")
                 else:
                     self.print_to_screen(received_message)
             except socket.timeout:
