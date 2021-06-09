@@ -30,6 +30,9 @@ class ChatClient:
         self.socket = None
         self.current_message_receiver_name = None
         self.current_message_type = None
+        # this prevents messages from being send when the user is interacting
+        # with the UI e.g. to accept a file transfer
+        self.block_sending = False
         # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
         # FIXME this is initialized here to prevent code duplication since
         # login and signup both do socket creation which should also be
@@ -104,12 +107,22 @@ class ChatClient:
                         break
                 received_message = pickle.loads(data)
                 if isinstance(received_message, AttachmentMessage):
-                    try:
-                        with open(received_message.filename + ".recvd", "wb") as attachment:
-                            attachment.write(received_message.content)
-                        print(f"Attachment '{received_message.filename}' received and saved as '{received_message.filename}.recvd'")
-                    except IOError as e:
-                        print(f"Could not write received attachment: {e}")
+                    self.block_sending = True
+                    print(f"User '{received_message.sender_name}' wants to send you the attachment '{received_message.filename}'")
+                    answer = ""
+                    while answer not in ("j", "N"):
+                        answer = input("Do you want to download it? [j/N]:")
+                        if answer == "j":
+                            try:
+                                with open(received_message.filename + ".recvd", "wb") as attachment:
+                                    attachment.write(received_message.content)
+                                print(f"Attachment '{received_message.filename}' received and saved as '{received_message.filename}.recvd'")
+                            except IOError as e:
+                                print(f"Could not write received attachment: {e}")
+                        elif answer == "N":
+                            print("Attachment download declined.")
+                            break
+                    self.block_sending = False
                 else:
                     self.print_to_screen(received_message)
             except EOFError:
@@ -124,6 +137,9 @@ class ChatClient:
         self.socket.close
 
     def send_message(self, content, username, receiver_name):
+        # return early if the sending should be blocked
+        if self.block_sending:
+            return
         message_object = None
         if content == "--create":
             message_object = CreateGroupMessage(self.username, receiver_name)
