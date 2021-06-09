@@ -124,8 +124,15 @@ class ChatClient:
                             print("Attachment download declined.")
                             break
                     self.block_sending = False
+                elif isinstance(received_message, PrivateHistoryMessage):
+                    print(received_message.rows)
+                elif isinstance(received_message, GroupHistoryMessage):
+                    print(received_message.rows)
                 else:
                     self.print_to_screen(received_message)
+            except socket.timeout:
+                continue
+
             except EOFError:
                 print("Server apears to be offline")
                 self.exit_application()
@@ -165,6 +172,10 @@ class ChatClient:
                       "Please make sure that a person or group to send the attachment to is selected.\n")
                 return
             message_object = AttachmentMessage.create(filename, content, username, receiver_name, self.current_message_type)
+        elif content == "--private_history":
+            message_object = PrivateHistoryRequest.create(username,receiver_name)
+        elif content == "--group_history":
+            message_object = GroupHistoryRequest(username, receiver_name)
         elif self.current_message_type == MessageType.PrivateTextMessage:
             message_object = PrivateTextMessage.create(content, username, receiver_name)
         elif self.current_message_type == MessageType.GroupTextMessage:
@@ -200,14 +211,24 @@ class ChatClient:
                           "--swap_to_group groupname ,start chatting with group\n"
                           "--swap_to_person username ,start chatting with person\n"
                           "--create groupname ,create a groupname\n"
-                          "--attach_file , attach a file by path")
+                          "--attach_file , attach a file by path\n"
+                          "--history ,show chat history")
                 elif message_content.strip() == "--quit":
                     self.exit_application()
                     return True
                 elif message_content.strip() == "--list":
                     # TODO display list of possible chats --therefore we have to keep a list of known users and groups in a file
                     pass
+
                 # TODO all these conditions can be written way more readable e.g. using .startswith()
+                elif message_content.strip() == "--history":
+                    if self.current_message_type == MessageType.PrivateTextMessage and self.current_message_receiver_name !=None:
+                        self.start_message_thread("--private_history", self.username, self.current_message_receiver_name)
+                    elif self.current_message_type == MessageType.GroupTextMessage and self.current_message_receiver_name !=None:
+                        self.start_message_thread("--group_history", self.username, self.current_message_receiver_name)
+                    else:
+                        print("Please join a chat first")
+
                 elif len(message_content.split(" ", 1)) == 2 and message_content.split(" ", 1)[0] == "--swap_to_person":
                     self.current_message_type = MessageType.PrivateTextMessage
                     self.current_message_receiver_name = message_content.split(" ", 1)[1]
