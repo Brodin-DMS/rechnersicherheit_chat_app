@@ -6,6 +6,7 @@ import threading
 import socket
 import ssl
 import logging
+import sqlite3
 # FIXME this is bad and should later be replaced with an import as ...
 from MessagePackage.Message import *
 
@@ -57,6 +58,16 @@ class Storage:
         self.path: str = path
         self.user_hashes = dict()
         self.load()
+        #create database for history
+        self.con = sqlite3.connect('history.db')
+        self.cur = self.con.cursor()
+        self.cur.execute('''CREATE TABLE IF NOT EXISTS private_history
+        (id INTEGER PRIMARY KEY, sender_name TEXT NOT NULL, receiver_name TEXT NOT NULL, message TEXT, attachment BLOB)''')
+        self.cur.execute('''CREATE TABLE IF NOT EXISTS group_history
+        (id INTEGER PRIMARY KEY, sender_name TEXT NOT NULL, group_name TEXT NOT NULL, message TEXT, attachment BLOB)''')
+        #TODO add user/pwd data to database
+        self.con.commit()
+        self.con.close()
 
     def store(self, user: StoredUser):
         self.user_hashes[user.username] = user
@@ -158,18 +169,42 @@ class ChatServer:
         sending_message_object = pickle.dumps(message)
         match.connection.sendall(sending_message_object)
 
+        # TODO change NONE to attachment once private and group message implement attachment
+        private_history_data = (message.sender_name, message.receiver_name, message.content, None)
+        con = sqlite3.connect('history.db')
+        cur = con.cursor()
+        cur.execute('INSERT INTO private_history(sender_name, receiver_name, message, attachment) VALUES (?,?,?,?)',
+                    private_history_data)
+        con.commit()
+        con.close()
+
     def send_group_message(self, message, connection) -> None:
         logging.info("Forwarding group message from '%s' to '%s'",
              message.sender_name,
              message.receiver_name)
         try:
+            # deny spoofing of sender name
+            sender_match = [k for k in self.active_users if self.active_users[k].connection == connection]
+        except KeyError:
+            return
+        logging.info(f"spoofing of sendername did not occured {message.sender_name == sender_match[0]}")
+        try:
             user_list = self.groupChats[message.receiver_name]
         except KeyError:
             logging.info("No such group: '%s'", message.receiver_name)
             return
+        message.sender_name = sender_match[0]
         for user in user_list:
             message_bytes = pickle.dumps(message)
             user.connection.sendall(message_bytes)
+        # TODO change None to attachment when group message supports attachment
+        group_history_data = (message.sender_name, message.receiver_name, message.content, None)
+        con = sqlite3.connect('history.db')
+        cur = con.cursor()
+        cur.execute('INSERT INTO group_history(sender_name, group_name, message, attachment) '
+                    'VALUES (?,?,?,?)', group_history_data)
+        con.commit()
+        con.close()
 
     def forward_message(self, message, connection):
 
@@ -245,6 +280,32 @@ class ChatServer:
                 self.send_group_message(message, connection)
             else:
                 raise AssertionError("Invalid receiver message type!")
+
+        elif isinstance(message, PrivateHistoryRequest):
+            try:
+                # deny spoofing of sender name
+                sender_match = [k for k in self.active_users if self.active_users[k].connection == connection]
+            except KeyError:
+                return
+            message.sender_name = sender_match[0]
+            con = sqlite3.connect('history.db')
+            cur = con.cursor()
+            cur.execute('SELECT * FROM private_history WHERE sender_name = ? AND receiver_name = ? OR  receiver_name = ? AND sender_name = ?',
+                                              (message.sender_name, message.receiver_name, message.sender_name, message.receiver_name))
+            result = cur.fetchall()
+            con.close()
+            new_message = PrivateHistoryMessage.create(result)
+            sending_message_object = pickle.dumps(new_message)
+            connection.sendall(sending_message_object)
+        elif isinstance(message, GroupHistoryRequest):
+            con = sqlite3.connect('history.db')
+            cur = con.cursor()
+            cur.execute('SELECT * FROM group_history WHERE group_name = ?', [message.group_name])
+            result = cur.fetchall()
+            con.close()
+            new_message = GroupHistoryMessage.create(result)
+            sending_message_object = pickle.dumps(new_message)
+            connection.sendall(sending_message_object)
         else:
             # TODO Throw No valid mesageType Execption
             logging.info("Received invalid message object from %s:%d",

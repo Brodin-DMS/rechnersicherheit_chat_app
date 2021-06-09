@@ -87,6 +87,44 @@ class AttachmentMessage(BaseMessage):
         self.receiver_msg_type = receiver_msg_type
 
 
+class PrivateHistoryRequest:
+    @staticmethod
+    def create(username, receiver_name):
+        return PrivateHistoryRequest(username, receiver_name)
+
+    def __init__(self, username, receiver_name):
+        self.username = username
+        self.receiver_name = receiver_name
+
+
+class PrivateHistoryMessage:
+    @staticmethod
+    def create(content):
+        return PrivateHistoryMessage(content)
+
+    def __init__(self, content):
+        self.rows = content
+
+
+class GroupHistoryRequest:
+    @staticmethod
+    def create(username, group_name):
+        return GroupHistoryRequest(username, group_name)
+
+    def __init__(self, username, group_name):
+        self.username = username
+        self.group_name = group_name
+
+
+class GroupHistoryMessage:
+    @staticmethod
+    def create(content):
+        return GroupHistoryMessage(content)
+
+    def __init__(self, content):
+        self.rows = content
+
+
 class MessageType:
     PrivateTextMessage = 0
     GroupTextMessage = 1
@@ -94,4 +132,9 @@ class MessageType:
     LoginResponse = 3
     SignUpMessage = 4
     CreateGroupMessage = 5
-    AttachmentMessage = 6
+    PrivateHistoryMessage = 6
+    GroupHistoryMessage = 7
+    PrivateHistoryRequest = 8
+    GroupHistoryRequest = 9
+    AttachmentMessage = 10
+
