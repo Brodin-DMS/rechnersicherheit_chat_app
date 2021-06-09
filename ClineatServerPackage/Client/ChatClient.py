@@ -2,11 +2,16 @@ from abc import ABCMeta, abstractmethod
 import sys
 import os
 import socket
+import ssl
 import threading
 import pickle
 from getpass import getpass
 # FIXME this is bad and should later be replaced with an import as ...
 from MessagePackage.Message import *
+
+HOSTNAME = "localhost"
+HOSTPORT = 55443
+CERTIFICATE_PATH = "chatcert.crt"
 
 BUFFERSIZE = 1024
 # maximum size of a message that can be received (mostly important for file
@@ -15,9 +20,9 @@ MAX_MSG_SIZE = 1048576
 
 class ChatClient:
     def __init__(self):
-        self.host_ip = "127.0.0.1"
-        self.sender_ip = socket.gethostbyname("localhost")
-        self.host_port = 55443
+        self.host_ip = HOSTNAME
+        self.sender_ip = socket.gethostbyname(HOSTNAME)
+        self.host_port = HOSTPORT
         self.is_auth = False
         self.username = None
         self.is_receiving = True
@@ -25,6 +30,12 @@ class ChatClient:
         self.socket = None
         self.current_message_receiver_name = None
         self.current_message_type = None
+        # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
+        # FIXME this is initialized here to prevent code duplication since
+        # login and signup both do socket creation which should also be
+        # deduplicated itself
+        self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        self.ssl_context.load_verify_locations(CERTIFICATE_PATH)
 
     def start_message_thread(self, content, username, receiver_name):
         message_thread = threading.Thread(target=self.send_message, args=(content, username, receiver_name))
@@ -34,10 +45,13 @@ class ChatClient:
         user_input_thread = threading.Thread(target=self.user_input)
         user_input_thread.start()
 
+    # FIXME DRY: This starts essentially the same as login(...)
     def sign_up(self, username, password):
         print("trying to sign-up. Please wait...")
         message_object = SignUpMessage.create(username, password)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # replace unencrypted with tls-encrypted socket
+        self.socket = self.ssl_context.wrap_socket(self.socket, server_hostname=HOSTNAME)
         self.socket.connect((self.host_ip, self.host_port))
         data = pickle.dumps(message_object)
         self.socket.sendall(data)
@@ -59,6 +73,8 @@ class ChatClient:
         print("trying to login. Please wait...")
         message_object = LoginMessage.create(username, password)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # replace unencrypted with tls-encrypted socket
+        self.socket = self.ssl_context.wrap_socket(self.socket, server_hostname=HOSTNAME)
         self.socket.connect((self.host_ip, self.host_port))
         data = pickle.dumps(message_object)
         self.socket.sendall(data)

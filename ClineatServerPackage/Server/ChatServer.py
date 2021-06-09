@@ -4,8 +4,14 @@ import os
 import pickle
 import threading
 import socket
+import ssl
 # FIXME this is bad and should later be replaced with an import as ...
 from MessagePackage.Message import *
+
+HOSTNAME = "localhost"
+HOSTPORT = 55443
+CERTIFICATE_PATH = "chatcert.crt"
+PRIVATE_KEY_PATH = "chatcert.key"
 
 BUFFERSIZE = 1024
 # maximum size of a message that can be received (mostly important for file
@@ -79,8 +85,8 @@ class Storage:
 
 class ChatServer:
     def __init__(self):
-        self.port = 55443
-        self.host_ip = socket.gethostbyname("localhost")
+        self.port = HOSTPORT
+        self.host_ip = socket.gethostbyname(HOSTNAME)
         self.active_users = dict()
         self.groupChats = dict()
         self.group_chat_message_history = []
@@ -105,6 +111,7 @@ class ChatServer:
         connection.settimeout(10.0)
         while connection_is_alive and self.is_receiving:
             try:
+                # FIXME DRY: This exact code fragment is also used in ChatClient.receive_messages(...)
                 data = b''
                 while True:
                     part = connection.recv(BUFFERSIZE)
@@ -211,7 +218,11 @@ class ChatServer:
         while self.is_receiving:
             try:
                 connection, address = self.receive_socket.accept()
-                self.start_connection_thread(connection)
+                # replace unencrypted with tls-encrypted socket
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(CERTIFICATE_PATH, PRIVATE_KEY_PATH)
+                secure_connection = context.wrap_socket(connection, server_side=True)
+                self.start_connection_thread(secure_connection)
             except socket.timeout:
                 continue
         self.receive_socket.close()
