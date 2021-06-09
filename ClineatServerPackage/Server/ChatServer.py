@@ -5,6 +5,7 @@ import pickle
 import threading
 import socket
 import ssl
+import logging
 # FIXME this is bad and should later be replaced with an import as ...
 from MessagePackage.Message import *
 
@@ -61,6 +62,7 @@ class Storage:
         self.user_hashes[user.username] = user
         with open(self.path, "a") as key_file:
             key_file.write(f"{user.username},{user.salt.hex()},{user.hashed_password.hex()}\n")
+        logging.info("Stored user '%s'", user.username)
 
     def load(self):
         try:
@@ -73,6 +75,7 @@ class Storage:
                                           bytes.fromhex(hashed_password))
                     self.user_hashes[username] = new_user
         except FileNotFoundError:
+            logging.warning("Storage file '%s' not found", self.path)
             pass
 
     def check_user(self, username: str) -> bool:
@@ -107,6 +110,9 @@ class ChatServer:
         threading.Thread(target=self.connection_receive_message, args=(connection,)).start()
 
     def connection_receive_message(self, connection):
+        logging.info("Handling connection to %s:%d",
+                     connection.getpeername()[0],
+                     connection.getpeername()[1])
         connection_is_alive = True
         connection.settimeout(10.0)
         while connection_is_alive and self.is_receiving:
@@ -132,23 +138,34 @@ class ChatServer:
                 continue
             except socket.timeout:
                 continue
+        logging.info("Closing connection to %s:%d",
+                     connection.getpeername()[0],
+                     connection.getpeername()[1])
         connection.close()
 
     def send_private_message(self, message, connection) -> None:
+        logging.info("Forwarding private message from '%s' to '%s'",
+             message.sender_name,
+             message.receiver_name)
         try:
             match = self.active_users[message.receiver_name]
             #deny spoofing of sender name
             sender_match = [k for k in self.active_users if self.active_users[k].connection == connection]
         except KeyError:
+            logging.info("No such user: '%s'", message.receiver_name)
             return
         message.sender_name = sender_match[0]
         sending_message_object = pickle.dumps(message)
         match.connection.sendall(sending_message_object)
 
     def send_group_message(self, message, connection) -> None:
+        logging.info("Forwarding group message from '%s' to '%s'",
+             message.sender_name,
+             message.receiver_name)
         try:
             user_list = self.groupChats[message.receiver_name]
         except KeyError:
+            logging.info("No such group: '%s'", message.receiver_name)
             return
         for user in user_list:
             message_bytes = pickle.dumps(message)
@@ -157,17 +174,27 @@ class ChatServer:
     def forward_message(self, message, connection):
 
         if isinstance(message, SignUpMessage):
+            logging.info("Sign-up attempt from %s:%d with username '%s'",
+                          connection.getpeername()[0],
+                          connection.getpeername()[1],
+                          message.username)
             if self.storage.check_user(message.username):
                 response_message = MessageResponse.create(2)
                 response_message_object = pickle.dumps(response_message)
                 connection.sendall(response_message_object)
+                logging.info("Username '%s' already in use", message.username)
             else:
                 self.active_users[message.username] = User(message.username, connection)
                 self.storage.store(StoredUser.create(message.username, message.password))
                 response_message = MessageResponse.create(1)
                 response_message_object = pickle.dumps(response_message)
                 connection.sendall(response_message_object)
+                logging.info("Sign-up with username '%s' successful", message.username)
         if isinstance(message, LoginMessage):
+            logging.info("Login attempt from %s:%d with username '%s'",
+                          connection.getpeername()[0],
+                          connection.getpeername()[1],
+                          message.username)
             stored_password: int = self.storage.user_hashes[message.username].hashed_password
             salt = self.storage.user_hashes[message.username].salt
             if StoredUser.salted_hash(salt, message.password) == stored_password:
@@ -175,37 +202,55 @@ class ChatServer:
                 response_message = MessageResponse.create(1)
                 response_message_object = pickle.dumps(response_message)
                 connection.sendall(response_message_object)
+                logging.info("Login with username '%s' successful", message.username)
             else:
                 response_message = MessageResponse.create(3)
                 response_message_object = pickle.dumps(response_message)
                 connection.sendall(response_message_object)
+                logging.info("Login with username '%s' failed", message.username)
         elif isinstance(message, PrivateTextMessage):
-            # TODO log
             self.send_private_message(message, connection)
         elif isinstance(message, GroupTextMessage):
             self.send_group_message(message, connection)
         elif isinstance(message, CreateGroupMessage):
+            logging.info("User '%s' attempts to create or join group '%s'",
+                         message.username,
+                         message.group_name)
             if message.group_name in self.groupChats.keys():
                 if self.active_users[message.username] in self.groupChats[message.group_name]:
                     return
                 #TODO this is spoofable check for connection and match to username --otherwise anyone can sign a stranger up to a groupchat
                 self.groupChats[message.group_name].append(User(message.username, connection))
+                logging.info("Added user '%s' to group '%s'",
+                             message.username,
+                             message.group_name)
             else:
                 self.groupChats[message.group_name] = [User(message.username, connection)]
+                logging.info("Created group '%s'", message.group_name)
+                logging.info("Added user '%s' to group '%s'",
+                             message.username,
+                             message.group_name)
         elif isinstance(message, AttachmentMessage):
             # save file locally
             # TODO prevent overwriting already existing files
+            logging.info("User '%s' tries to send attachment '%s'", message.sender_name, message.filename)
             try:
                 with open(message.filename, "wb") as attachment:
                     attachment.write(message.content)
             except IOError as e:
-                print(f"Could not write file to server: {e}")
+                logging.warning(f"Could not write file to server: {e}")
             if message.receiver_msg_type == MessageType.PrivateTextMessage:
                 self.send_private_message(message, connection)
             elif message.receiver_msg_type == MessageType.GroupTextMessage:
                 self.send_group_message(message, connection)
             else:
                 raise AssertionError("Invalid receiver message type!")
+        else:
+            # TODO Throw No valid mesageType Execption
+            logging.info("Received invalid message object from %s:%d",
+                         connection.getpeername()[0],
+                         connection.getpeername()[1])
+            pass
 
     def receive_message(self):
         self.receive_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -222,6 +267,7 @@ class ChatServer:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                 context.load_cert_chain(CERTIFICATE_PATH, PRIVATE_KEY_PATH)
                 secure_connection = context.wrap_socket(connection, server_side=True)
+                logging.info("New connection to %s:%d", address[0], address[1])
                 self.start_connection_thread(secure_connection)
             except socket.timeout:
                 continue
@@ -229,15 +275,21 @@ class ChatServer:
 
 
 def run_server():
+    logging.basicConfig(filename="server.log",
+                        format="%(levelname)s %(asctime)s %(threadName)s: %(message)s",
+                        level=logging.INFO)
     chat_server = ChatServer()
-    print("stared Server on Ip: %s on port: %i\n", (chat_server.host_ip, chat_server.port))
     chat_server.start_receiver_thread()
+    print("Started Server on IP: %s on port: %i" % (chat_server.host_ip, chat_server.port))
+    logging.info("Started Server on IP: %s on port: %i", chat_server.host_ip, chat_server.port)
     while True:
         user_input = input("type exit to close ServerApplication\n")
         print(user_input)
+        logging.info("User input: '%s'", user_input)
         if user_input == "exit":
             chat_server.is_receiving = False
             print("closing Server gracefully please Wait")
+            logging.info("Closing server")
             break
         if user_input == "show users":
             print(chat_server.active_users)
@@ -247,3 +299,4 @@ def run_server():
             print(chat_server.groupChats)
     for thread in threading.enumerate():
         print(thread.name)
+    logging.shutdown()
