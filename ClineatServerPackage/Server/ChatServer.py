@@ -201,7 +201,7 @@ class ChatServer:
             user.connection.sendall(message_bytes)
 
         #save to history
-        if isinstance(message, PrivateTextMessage):
+        if isinstance(message, GroupTextMessage):
             # TODO change NONE to attachment once private and group message implement attachment
             group_history_data = (message.sender_name, message.receiver_name, message.content, None)
         elif isinstance(message, AttachmentMessage):
